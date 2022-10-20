@@ -1,0 +1,431 @@
+---
+title: "Customer Segmentation using K-Means Clustering"
+author: "Chayut Phukson"
+date: "2022-10-14"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cerulean
+    highlight: kate
+---
+
+# Import Library
+```{r}
+library(tidyverse)
+library(plotrix) # create pie chart
+library(skmeans)
+library(gridExtra)
+```
+
+# Import Dataset
+ref: "https://www.kaggle.com/datasets/vjchoudhary7/customer-segmentation-tutorial-in-python?select=Mall_Customers.csv"
+```{r}
+Mall_Customers <- read.csv("Mall_Customers.csv", stringsAsFactors = T)
+```
+
+```{r}
+Mall_Customers
+```
+
+# Review Dataset
+```{r}
+head(Mall_Customers)
+```
+
+```{r}
+names(Mall_Customers)
+```
+
+```{r}
+str(Mall_Customers)
+```
+
+```{r}
+summary(Mall_Customers)
+```
+
+```{r}
+# check NA
+sum(is.na(Mall_Customers))
+```
+
+# Customer Gender Visualization
+# Using BarPlot to display Gender Comparision
+```{r}
+Mall_Customers %>% 
+  ggplot(aes(Gender)) +
+  geom_bar(fill = c("#529cf6", "#ffb855")) +
+  ylim(0,120) +
+  labs(title = "Gender Comparision") +
+  theme_bw() +
+  coord_flip() +
+  xlab("") 
+```
+
+# Pie Chart Depicting Ratio of Female and Male
+```{r}
+Gender_Table <- table(Mall_Customers$Gender)
+Gender_Table
+```
+
+```{r}
+Percent_Gender <- (table(Mall_Customers$Gender)/sum(table(Mall_Customers))) * 100
+Percent_Gender
+```
+
+```{r}
+Gender_labels <- paste(c("Female","Male"), " ", Percent_Gender, "%", sep = " ")
+```
+
+```{r}
+# Create pie chart
+pie(x = Gender_Table, labels = Gender_labels, col = c("#529cf6", "#ffb855"))
+```
+
+# Visualization of Age Distribution
+```{r}
+table(Mall_Customers$Age)
+```
+
+```{r}
+hist(Mall_Customers$Age,
+    col = "#FFE4B5",
+    main = "Histogram to Show Count of Age Class",
+    ylim = c(0,40),
+    xlab = "Age",
+    ylab = "Frequency",
+    labels = TRUE)
+```
+
+```{r}
+Mall_Customers %>% 
+  ggplot(aes(x = Age)) +
+  geom_boxplot(fill = "#FFE4B5") +
+  theme_classic() 
+```
+
+# Analysis of the Annual Income of the Customers
+# Descriptive Analysis
+```{r}
+table(Mall_Customers$Annual.Income..k..)
+```
+
+```{r}
+summary(Mall_Customers$Annual.Income..k..)
+```
+
+```{r}
+hist(Mall_Customers$Annual.Income..k..,
+    col = "#E6E6FA",
+    main = "Histogram for Annual Income",
+    ylim = c(0, 40),
+    xlab = "Annual Income",
+    ylab = "Frequency",
+    labels = TRUE)
+```
+
+```{r}
+plot(density(Mall_Customers$Annual.Income..k..),
+    main = "Density Plot for Annual Income",
+    xlab = "Annual Income",
+    ylab = "Density")
+polygon(density(Mall_Customers$Annual.Income..k..), col = "#E6E6FA")
+```
+
+# Analyzing Spending Score of the Customers
+```{r}
+table(Mall_Customers$Spending.Score..1.100.)
+```
+
+```{r}
+summary(Mall_Customers$Spending.Score..1.100.)
+```
+
+```{r}
+hist(Mall_Customers$Spending.Score..1.100.,
+    main = "Histogram for Spending Score",
+    ylim = c(0,45),
+    xlab = "Spending Score",
+    ylab = "Frequency",
+    col = "#FFE4E1",
+    labels = TRUE)
+```
+
+```{r}
+Mall_Customers %>% 
+  ggplot(aes(x = Spending.Score..1.100.)) +
+  geom_boxplot(fill = "#FFE4E1") +
+  xlab("Spending Score") +
+  theme_classic()
+```
+
+# K-means Algorithm
+# Elbow Method
+# Customer Segmentation with Psychographics (social class, lifestyle, personality traits) and Behavioral data (spending and consumption habits,  product/service usage)
+
+# 1. Customer Segmentation with Annual Income and Speding Score
+
+We customer Segmentation with Annual Income of the customee and the Speding Score. 
+
+
+```{r}
+# select variables Annual Income and the Speding Score
+k_newdata <- Mall_Customers[ , c(4:5)]
+```
+
+```{r}
+library(purrr)
+set.seed(111)
+# function to calculate total within-cluster sum of square (WCSS)
+wcss <- function(k) {
+  kmeans(k_newdata, 
+         k, 
+         iter.max = 100, 
+         nstart = 100, 
+         algorithm = "Lloyd" )$tot.withinss
+}
+# compute and plot wcss for k = 1 to k = 10
+k_values <- 1:10 
+
+wcss_values <- map_dbl(k_values, wcss)
+
+plot(k_values, wcss_values,
+     type = "b", 
+     pch = 19, 
+     frame = FALSE, 
+     xlab = "Number of clusters K",
+     ylab = "Total within-cluster sum of square")
+```
+
+# Compute k-means with k = 5
+```{r}
+set.seed(111)
+customerClusters <- kmeans(k_newdata, 5)
+customerClusters
+```
+
+# Visualization K-means Cluster of Annual Income and Speding Score
+```{r}
+set.seed(111)
+ggplot(data = k_newdata, aes(x = Annual.Income..k.., y = Spending.Score..1.100.)) + 
+  geom_point(stat = "identity", 
+             aes(color = as.factor(customerClusters$cluster))) +
+  scale_color_discrete(name = " ",
+                       breaks = c("1", "2", "3", "4", "5"),
+                       labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4", "Cluster 5")) +
+  ggtitle("Mall Customer Segmens", subtitle = "Using K-means Clustering") +
+  xlab("Annual Income") +
+  ylab("Speding Score")
+```
+
+Cluster 1. Customers with medium annual income and medium annual spend
+
+Cluster 2. Customers with low annual income and low annual spend 
+
+Cluster 3. Customers with high annual income and high annual spend
+
+Cluster 4. Customers low annual income but high annual spend
+
+Cluster 5. Customers with high annual income and low annual spend
+
+
+# 2. Customer Segmentation with Age and Spending Score
+
+```{r}
+# select variables Age and Spending Score
+k_newdata_Age_Spending <- Mall_Customers[ , c(3,5)]
+```
+
+```{r}
+library(purrr)
+set.seed(1)
+# function to calculate total within-cluster sum of square (WCSS)
+wcss <- function(k) {
+  kmeans(k_newdata_Age_Spending, 
+         k, 
+         iter.max = 100, 
+         nstart = 100, 
+         algorithm = "Lloyd" )$tot.withinss
+}
+# compute and plot wcss for k = 1 to k = 10
+k_values <- 1:10 
+
+wcss_values <- map_dbl(k_values, wcss)
+
+plot(k_values, wcss_values,
+     type = "b", 
+     pch = 19, 
+     frame = FALSE, 
+     xlab = "Number of clusters K",
+     ylab = "Total within-cluster sum of square")
+```
+
+# Compute k-means with k = 4
+```{r}
+set.seed(1)
+customerClusters_Age_Spending <- kmeans(k_newdata_Age_Spending, 4)
+customerClusters_Age_Spending
+```
+
+# Visualization K-means Cluster of Age and Speding Score
+```{r}
+set.seed(1)
+ggplot(data = k_newdata_Age_Spending, aes(x = Age, y = Spending.Score..1.100.)) + 
+  geom_point(stat = "identity", 
+             aes(color = as.factor(customerClusters_Age_Spending$cluster))) +
+  scale_color_discrete(name = " ",
+                       breaks = c("1", "2", "3", "4"),
+                       labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4")) +
+  ggtitle("Mall Customer Segmens", subtitle = "Using K-means Clustering") +
+  xlab("Age") +
+  ylab("Speding Score")
+```
+
+Cluster 1. Customers with high age and medium annual spend
+
+Cluster 2. Customers with low age and medium annual spend 
+
+Cluster 3. Customers with low to high of age and low annual spend
+
+Cluster 4. Customers low age but high annual spend
+
+
+# 3. Customer Segmentation with Age, Anual Income and Spending Score
+
+```{r}
+# select variables Age, Anual Income and Spending Score
+k_newdata_Age_Income_Spending <- Mall_Customers[ , c(3:5)]
+```
+
+```{r}
+library(purrr)
+set.seed(1)
+# function to calculate total within-cluster sum of square (WCSS)
+wcss <- function(k) {
+  kmeans(k_newdata_Age_Income_Spending, 
+         k, 
+         iter.max = 100, 
+         nstart = 100, 
+         algorithm = "Lloyd" )$tot.withinss
+}
+# compute and plot wcss for k = 1 to k = 10
+k_values <- 1:10 
+
+wcss_values <- map_dbl(k_values, wcss)
+
+plot(k_values, wcss_values,
+     type = "b", 
+     pch = 19, 
+     frame = FALSE, 
+     xlab = "Number of clusters K",
+     ylab = "Total within-cluster sum of square")
+```
+
+# Compute k-means with k = 6
+```{r}
+set.seed(1)
+customerClusters_Age_Income_Spending <- kmeans(k_newdata_Age_Income_Spending, 6)
+customerClusters_Age_Income_Spending
+```
+
+
+ref: 
+"https://data-flair.training/blogs/r-data-science-project-customer-segmentation/"
+"https://www.youtube.com/watch?v=Whlis-6vsUY"
+
+
+#---------------------------------------OR-------------------------------------------#
+
+
+
+```{r}
+# select variables that interested
+k_newdata2 <- Mall_Customers[ , c(4:5)]
+```
+
+```{r}
+# K estimation using Elbow approach
+set.seed(111)
+tot.withinss <- vector("numeric", length = 10)
+for (i in 1:10) {
+    kDet <- kmeans(k_newdata2, i)
+    tot.withinss[i] <- kDet$tot.withinss
+}
+
+ggplot(as.data.frame(tot.withinss), aes(x = seq(1,10), y = tot.withinss)) + 
+    geom_point(col = "#F8766D") +    
+    geom_line(col = "#F8766D") + 
+    theme(axis.title.x.bottom = element_blank()) +
+    ylab("Within-cluster Sum of Squares") +
+    xlab("Number of Clusters") +
+    ggtitle("Elbow K Estimation")
+```
+
+```{r}
+library(factoextra)
+fviz_nbclust(k_newdata2, kmeans, method = "wss")
+```
+
+```{r}
+# Cluster
+set.seed(111)
+customerClusters2 <- kmeans(k_newdata, 5)
+customerClusters2
+```
+
+```{r}
+# Visualization Cluster
+set.seed(111)
+ggplot(data = k_newdata2, aes(x = Annual.Income..k.., y = Spending.Score..1.100.)) + 
+  geom_point(stat = "identity", 
+             aes(color = as.factor(customerClusters2$cluster))) +
+  scale_color_discrete(name = " ",
+                       breaks = c("1", "2", "3", "4", "5"),
+                       labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4", "Cluster 5")) +
+  ggtitle("Mall Customer Segmens", subtitle = "Using K-means Clustering") +
+  xlab("Annual Income") +
+  ylab("Speding Score")
+```
+
+
+Cluster 1. Customers with medium annual income and medium annual spend
+
+Cluster 2. Customers with low annual income and low annual spend 
+
+Cluster 3. Customers with high annual income and high annual spend
+
+Cluster 4. Customers low annual income but high annual spend
+
+Cluster 5. Customers with high annual income and low annual spend
+
+ref: "https://www.kaggle.com/code/ioannismesionis/mall-customer-segmentation-unsupervised-learning/notebook"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
