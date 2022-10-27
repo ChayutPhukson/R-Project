@@ -1,0 +1,452 @@
+---
+title: "Uber Data Analysis Project in R"
+author: "chayut"
+date: "2022-10-26"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cerulean
+    highlight: kate
+---
+
+- Companies may use data visualization to better understand complicated datasets and make better decisions.
+
+- We’ll use R packages like ggplot2 to create data analysis in this project.
+
+- We utilize user data to extract insights and provide an accurate prediction of clients who will take Uber trips and rides. 
+
+- The study will look at several criteria such as the number of journeys made in a day, the number of travels made in a month, and so on. 
+
+- As a result of this study, we can determine the average number of passengers that Uber may have in a day, the peak hours when there are more consumers available, the number of trips identified at the highest on which day of the month, and so on.
+
+
+# Import Library
+```{r}
+# install.packages("ggthemes")
+library(tidyverse)
+library(ggthemes) # create extra themes and scales with ggplot2
+library(lubridate)
+library(DT) # we will be able to interface with the JavaScript Library
+library(scales)
+```
+
+# Creating vector of colors to be implemented in our plots
+```{r}
+colors <- c("#CC1011", "#665555", "#05a399", "#cfcaca", "#f5e840", "#0683c9", "#e075b0")
+colors
+```
+
+# Import Dataset
+```{r}
+# Read the data for each month separately 
+apr_data <- read.csv("uber-raw-data-apr14.csv")
+may_data <- read.csv("uber-raw-data-may14.csv")
+jun_data <- read.csv("uber-raw-data-jun14.csv")
+jul_data <- read.csv("uber-raw-data-jul14.csv")
+aug_data <- read.csv("uber-raw-data-aug14.csv")
+sep_data <- read.csv("uber-raw-data-sep14.csv")
+```
+
+```{r}
+# view the data
+head(apr_data)
+head(may_data)
+head(jun_data)
+head(jul_data)
+head(aug_data)
+head(sep_data)
+```
+
+```{r}
+# Combine the data together 
+Uber_data <- rbind(apr_data, may_data, jun_data, jul_data, aug_data, sep_data)
+cat("The dimensions of the data are:", dim(Uber_data))
+```
+
+```{r}
+# view the data
+head(Uber_data)
+```
+
+we will format the datetime into a more readable format using the Date Time conversion function.
+
+```{r}
+Uber_data$Date.Time <- as.POSIXct(Uber_data$Date.Time, format = "%m/%d/%Y %H:%M:%S")
+Uber_data$Time <- format(as.POSIXct(Uber_data$Date.Time, 
+                                    format = "%m/%d/%Y %H:%M:%S"), 
+                         format = "%H:%M:%S")
+Uber_data$Date.Time <- ymd_hms(Uber_data$Date.Time)
+head(Uber_data)
+```
+
+```{r}
+Sys.setlocale("LC_TIME", "English")
+```
+
+```{r}
+# Create individual columns for day, month, year and day of week
+Uber_data$day <- factor(day(Uber_data$Date.Time))
+Uber_data$month <- factor(month(Uber_data$Date.Time, label = TRUE))
+Uber_data$year <- factor(year(Uber_data$Date.Time))
+Uber_data$day_of_week <- factor(wday(Uber_data$Date.Time, label = TRUE))
+head(Uber_data)
+```
+
+```{r}
+# Add Time variables as well 
+Uber_data$second <- factor(second(hms(Uber_data$Time)))
+Uber_data$minute <- factor(minute(hms(Uber_data$Time)))
+Uber_data$hour <- factor(hour(hms(Uber_data$Time)))
+head(Uber_data)
+```
+
+# Data Visualisation
+# Plotting the trips by hours in a day
+```{r}
+hourly_data <- Uber_data %>% 
+                group_by(hour) %>% 
+                summarise(Total = n())
+
+datatable(hourly_data)
+```
+
+```{r}
+# Plot the data by hour
+ggplot(data = hourly_data, aes(x = hour, y = Total)) +
+  geom_bar(stat = "identity",
+           fill = "#4169E1",
+           color = "black") +
+  ggtitle("Trips Every Hour", subtitle = "aggregated today") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) 
+
+```
+
+# Plotting trips by hour and month
+```{r}
+# Aggregate the data by month and hour
+month_hour_data <- Uber_data %>% 
+                    group_by(month, hour) %>% 
+                    summarise(Total = n())
+
+datatable(month_hour_data)
+```
+
+```{r}
+ggplot(data = month_hour_data, aes(x = hour, 
+                                   y = Total, 
+                                   fill = month)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Trips by Hour and Month") + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma)
+```
+
+# Plotting data by trips during every day of the month
+```{r}
+# Aggregate data by day of the month 
+day_data <- Uber_data %>% 
+              group_by(day) %>% 
+              summarise(Total = n())
+
+datatable(day_data)
+```
+
+```{r}
+# Plot the data for the day
+ggplot(data = day_data, aes(x = day, y = Total)) +
+  geom_bar(stat = "identity",
+           fill = "#4169E1",
+           color = "black") +
+  ggtitle("Trips Every Day") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma)
+```
+
+# Plotting trips by day and month 
+```{r}
+# Collect data by day and month
+day_month_data <- Uber_data %>% 
+                    group_by(month, day_of_week) %>% 
+                    summarise(Total = n())
+
+datatable(day_month_data)
+```
+
+```{r}
+ggplot(data = day_month_data, aes(x = month, 
+                                  y = Total, 
+                                  fill = day_of_week)) +
+  geom_bar(stat = "identity", 
+           aes(fill = day_of_week), 
+           position = "dodge") +
+  ggtitle("Trips by Day and Month") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) +
+  scale_fill_manual(values = colors)
+```
+
+# Number of Trips place during months in a year
+```{r}
+month_data <- Uber_data %>% 
+                group_by(month) %>% 
+                summarise(Total = n())
+
+datatable(month_data)
+```
+
+```{r}
+ggplot(data = month_data, aes(x = month, 
+                              y = Total, 
+                              fill = month)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Trips by month") + 
+  theme_bw() +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) + 
+  scale_fill_manual(values = colors)
+```
+
+# Finding out the number of Trips by bases
+# Plotting trips by Bases
+```{r}
+ggplot(data = Uber_data, aes(x = Base)) +
+  geom_bar(fill = "#6666CC",
+           color = "black") +
+  ggtitle("Trips by Bases") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) +
+  ylab("Total")
+```
+
+# Plotting trips by Bases and Month
+```{r}
+ggplot(data = Uber_data, aes(x = Base, fill = month)) + 
+  geom_bar(position = "dodge") +
+  ggtitle("Trips by Bases and Month") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) +
+  scale_fill_manual(values = colors) +
+  ylab("Total")
+```
+
+# Plotting trips by Bases and Day of Weak
+```{r}
+ggplot(data = Uber_data, aes(x = Base, fill = day_of_week)) + 
+  geom_bar(position = "dodge") +
+  ggtitle("Trips by Bases and Day of Weak") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) +
+  scale_fill_manual(values = colors) +
+  ylab("Total")
+```
+
+# Heatmap visualization of Day, Hour and Month
+# Heatmap by Day and Hour
+```{r}
+heat_day_hour_data <- Uber_data %>% 
+                  group_by(day, hour) %>% 
+                  summarise(Total = n())
+
+datatable(heat_day_hour_data)
+```
+
+```{r}
+ggplot(data = heat_day_hour_data, 
+       aes(x = day, 
+           y = hour, 
+           fill = Total)) +
+  geom_tile(color = "white") +
+  ggtitle("Heat Map by Day and Hour") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+# Heatmap by Day and Month
+```{r}
+heat_day_month_data <- Uber_data %>% 
+                  group_by(day, month) %>% 
+                  summarise(Total = n())
+
+datatable(heat_day_month_data)
+```
+
+```{r}
+ggplot(data = heat_day_month_data, 
+       aes(x = day, 
+           y = month, 
+           fill = Total)) +
+  geom_tile(color = "white") +
+  ggtitle("Heat Map by Day and MOnth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+# Heatmap by Day of Weak and Month 
+```{r}
+heat_dayofweak_month_data <- Uber_data %>% 
+                              group_by(day_of_week, month) %>% 
+                              summarise(Total = n())
+
+datatable(heat_dayofweak_month_data)
+```
+
+```{r}
+ggplot(data = heat_dayofweak_month_data, 
+       aes(x = day_of_week,
+           y = month, 
+           fill = Total)) +
+  geom_tile() + # color = ""
+  geom_text(aes(x = day_of_week, 
+                y = month, 
+                label = Total), 
+            color = "purple", 
+            size = 4) +
+  scale_fill_gradient(low = "white", high = "#87CEEB") +
+  ggtitle("Heat Map by Day of Weak and Month") +
+  xlab("") +
+  ylab("") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+# Heatmap by Base and Month
+```{r}
+heat_base_month_data <- Uber_data %>% 
+                    group_by(Base, month) %>% 
+                    summarise(Total = n())
+
+datatable(heat_base_month_data)
+```
+
+```{r}
+ggplot(data = heat_base_month_data, 
+       aes(x = Base,
+           y = month, 
+           fill = Total)) +
+  geom_tile() + # color = ""
+  geom_text(aes(x = Base, 
+                y = month, 
+                label = Total), 
+            color = "purple", 
+            size = 4) +
+  scale_fill_gradient(low = "#F5F5DC", high = "#D2B48C") +
+  ggtitle("Heat Map by Bases and Month") +
+  xlab("") +
+  ylab("") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = "none")
+```
+
+# Heatmap by Base and Day of Weak
+```{r}
+heat_base_dayofweak_data <- Uber_data %>% 
+                              group_by(Base, day_of_week) %>% 
+                              summarise(Total = n())
+datatable(heat_base_dayofweak_data)
+```
+
+```{r}
+ggplot(data = heat_base_dayofweak_data, 
+       aes(x = Base,
+           y = day_of_week, 
+           fill = Total)) +
+  geom_tile() + # color = ""
+  geom_text(aes(x = Base, 
+                y = day_of_week, 
+                label = Total), 
+            color = "purple", 
+            size = 4) +
+  scale_fill_gradient(low = "white", high = "#f57f17") +
+  ggtitle("Heat Map by Bases and Day of Weak") +
+  xlab("") +
+  ylab("") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = "none") +
+  xlab("Bases")
+```
+
+# Creating a map visualization of rides in New York
+
+```{r}
+min_lat <- 40.5774
+max_lat <- 40.9176
+min_long <- -74.15
+max_long <- -73.7004
+
+ggplot(Uber_data, aes(x = Lon, y = Lat)) +
+  geom_point(size = 1, color = "blue") +
+  scale_x_continuous(limits = c(min_long, max_long)) +
+  scale_y_continuous(limits = c(min_lat, max_lat)) +
+  theme_map() +
+  ggtitle("NYC MAP BASED ON UBER RIDES DURING 2014 (APR-SEP)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ggplot(Uber_data, aes(x = Lon, y = Lat, color = Base)) +
+  geom_point(size = 1) +
+  scale_x_continuous(limits = c(min_long, max_long)) +
+  scale_y_continuous(limits = c(min_lat, max_lat)) +
+  theme_map() +
+  ggtitle("NYC MAP BASED ON UBER RIDES DURING 2014 (APR-SEP) by BASE") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Reference
+"https://data-flair.training/blogs/r-data-science-project-uber-data-analysis/"
+
+"https://www.kaggle.com/code/prakharrathi25/uber-data-analysis-in-r/notebook"
+
+"https://www.youtube.com/watch?v=PRdwfszdoo0&list=PLoTScYm9O0GGSiUGzdWbjxIkZqEO-O6qZ&index=77"
+
+
+
+
+
+
+
+
+
