@@ -1,0 +1,239 @@
+---
+title: "Sentiment Analysis with R"
+author: "chayut"
+date: "2022-10-10"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cerulean
+    highlight: kate
+---
+
+- Sentimental analysis is the process of evaluating words to discover sentiments and opinions that may be positive or negative in polarity. 
+
+- With the help of sentiment analysis, you can find out the nature of opinion that is reflected in documents, websites, social media feed, etc. 
+
+- Sentiment Analysis is a type of classification where the data is classified into different classes. 
+
+- This is a type of categorization in which the categories are either binary (optimistic or pessimistic) or multiple (happy, angry, sad, disgusted, etc.).
+
+- The project is written in R, and it makes use of the Janeausten R package’s dataset. 
+
+- To perform an inner join, general-purpose lexicons like AFINN, bing, and Loughran are utilized, and the results are presented using a word cloud.
+
+# Install Package
+```{r}
+# install.packages("janeaustenr")
+```
+
+# Import Library
+
+The dataset that we will use will be provided by the R package ‘janeaustenr’.
+
+```{r}
+library(tidyverse)
+library(janeaustenr) 
+library(DT) 
+library(tidytext)
+library(stringr)
+```
+
+# View Sentiments
+```{r}
+datatable(sentiments)
+```
+
+We will make use of three general purpose lexicons.
+
+1. AFINN
+
+- the AFINN lexicon model scores the words in "a range from -5 to 5".
+
+- The increase in negativity corresponds the negative sentiment whereas an increase in positivity corresponds the positive one.
+
+2. bing
+
+- The bing lexicon model on the other hand, classifies the sentiment into a binary category of "negative or positive".
+
+3. loughran
+
+- The loughran model that performs analysis of "the shareholder’s reports".
+
+# Using of the bing lexicons to extract the sentiments out of our data
+```{r}
+datatable(get_sentiments("bing"))
+```
+
+# R book code [duplicate]
+
+- The "janeaustenr package" will provide us with the textual data in the form of books authored by the novelist Jane Austen. 
+
+- Tidytext will allow us to perform efficient text analysis on our data. 
+
+- We will convert the text of our books into a tidy format using unnest_tokens() function.
+
+# Review The book Sense and Sensibility (austen_books())
+```{r}
+names(austen_books())
+```
+
+```{r}
+datatable(unique(austen_books()))
+```
+
+# The Jane Austen's Complete Novels
+```{r}
+# library(janeaustenr)
+# library(stringr)
+# library(tidytext) 
+book_data <- 
+  austen_books() %>%
+  group_by(book) %>% 
+  mutate(line_number = row_number(),
+         chapter = cumsum(str_detect(text, 
+                                     regex("^chapter [\\divxlc]",
+                                                 ignore_case = TRUE)))) %>% 
+  ungroup() %>% 
+  unnest_tokens(word, text)
+
+book_data
+```
+
+- We have performed the tidy operation on our text such that each row contains a single word.
+
+- We will now make use of the “bing” lexicon to and implement filter() over the words that correspond to joy. 
+
+- We will use "the book Emma" and derive its words to implement out sentiment analysis model.
+
+# Filter positive sentiments of R
+```{r}
+positive_sentiment <- get_sentiments("bing") %>% 
+                        filter(sentiment == "positive")
+
+datatable(positive_sentiment)
+```
+
+# Review book data
+```{r}
+names(book_data)
+```
+
+```{r}
+summary(book_data)
+```
+
+# Count words positive sentiment of the book Emma
+```{r}
+book_data %>% 
+  filter(book == "Emma") %>% # The text of Jane Austen's novel "Emma"
+  semi_join(positive_sentiment) %>% 
+  count(word, sort = TRUE)
+```
+
+In the next step.
+
+- We will use "spread() function" to segregate our data into separate columns of positive and negative sentiments.
+
+- We will then use the "mutate() function" to calculate the total sentiment, that is, the difference between positive and negative sentiment.
+
+```{r}
+bing <- get_sentiments("bing") # sentiments of R
+Emma_sentiment <- book_data %>% 
+                    inner_join(bing) %>% 
+                    count(book = "Emma",
+                          index = line_number %/% 80,
+                          sentiment) %>% # count sentiment
+                    spread(key = sentiment, # split between positive and negative
+                           value = n, 
+                           fill = 0) %>% 
+                    mutate(difference_sentiment = positive - negative) # difference between positive and negative 
+
+datatable(Emma_sentiment)
+```
+
+# Data Visualization
+# visualize Words in the book “Emma” and Difference between Positive and Negative Sentiment
+```{r}
+# create group column storing either "+" or "-"
+Emma_sentiment$group <- cut(Emma_sentiment$difference_sentiment, 
+                            c(-Inf, 0, Inf), 
+                            labels = c("-", "+"))
+```
+
+```{r}
+datatable(Emma_sentiment)
+```
+
+
+```{r}
+ggplot(data = Emma_sentiment, 
+       aes(x = index, 
+           y = difference_sentiment, 
+           fill = group)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("-" = "red", "+" = "limegreen")) +
+  ggtitle("Words in the book “Emma” and Difference between Positive and Negative Sentiment") +
+  theme_bw() +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) +
+  xlab("word in the book Emma") +
+  ylim(c(-50,160))
+```
+
+# Count the most positive and negative words of the book Emma
+```{r}
+count_most_word <- book_data %>%
+                    inner_join(bing) %>% 
+                    count(word, sentiment, sort = TRUE) 
+
+datatable(count_most_word)
+```
+
+```{r}
+count_most_word <- count_most_word %>% 
+                    filter(n > 150) %>% 
+                    mutate(n = ifelse(sentiment == "negative", -n, n)) %>% 
+                    mutate(word = reorder(word, n))
+
+datatable(count_most_word)
+```
+
+# visualize the most positive and negative words of the book Emma
+```{r}
+ggplot(data = count_most_word, aes(x = word, y = n, fill = sentiment)) +
+  geom_col() +
+  coord_flip() +
+  ggtitle("The most positive and negative words of the book Emma") +
+  ylab("Sentiment Score") +
+  ylim(c(-2000, 2000))
+```
+
+# visualization positive and negative words in a single wordcloud
+use the "comparision.cloud() function"
+```{r}
+library(reshape2)
+library(wordcloud)
+
+book_data %>% 
+  inner_join(bing) %>% 
+  count(word, sentiment, sort = TRUE) %>% 
+  acast(word ~ sentiment,
+        value.var = "n",
+        fill = 0) %>% 
+  comparison.cloud(colors = c("red", "dark green"),
+                   max.words = 100)
+```
+
+# Referrences
+"https://data-flair.training/blogs/data-science-r-sentiment-analysis-project/"
+
+"https://stackoverflow.com/questions/48731076/regex-divxlc-in-text-analysis-in-r-book-code"
+
+"https://www.interviewbit.com/blog/r-projects/"
+
+"https://www.youtube.com/watch?v=PDObtPGm9X0&list=PLoTScYm9O0GGSiUGzdWbjxIkZqEO-O6qZ&index=71"
+
+
+
+
