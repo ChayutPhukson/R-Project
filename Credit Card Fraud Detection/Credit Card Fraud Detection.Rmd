@@ -1,0 +1,453 @@
+---
+title: "Detect Credit Card Fraud with Machine Learning in R"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cerulean
+    highlight: kate
+---
+# Project objectives
+
+1. We can construct an application to identify fraudulent credit card transactions using R programming. 
+
+2. We’ll employ a variety of Machine Learning methods to distinguish between legitimate and fraudulent transactions. 
+
+   - Logistic Regressions
+
+   - Decision Trees
+ 
+   - Artificial Neural Networks (ANN)
+
+   - Gradient Boosting Model (GBM)
+
+
+3. This fraud detection system uses the “card transaction” dataset, which contains both fraudulent and legitimate transactions. 
+
+4. Importing the transaction dataset, examining data, altering and organizing data, modeling, fitting, and finally implementing the algorithm are all phases in the project.
+
+# Import Library
+```{r}
+# install.packages("ranger")
+library(ranger)
+library(caret) # ML
+library(data.table)
+library(DT)
+```
+
+# 1. Import Dataset
+
+about Dataset column Class
+
+- 1 for fraudulent transactions
+
+- 0 otherwise
+
+# Content
+
+The dataset contains transactions made by credit cards in September 2013 by European cardholders.
+This dataset presents transactions that occurred in two days, where we have 492 frauds out of 284,807 transactions. The dataset is highly unbalanced, the positive class (frauds) account for 0.172% of all transactions.
+
+It contains only numerical input variables which are the result of a PCA transformation. Unfortunately, due to confidentiality issues, we cannot provide the original features and more background information about the data. Features V1, V2, … V28 are the principal components obtained with PCA, the only features which have not been transformed with PCA are 'Time' and 'Amount'. Feature 'Time' contains the seconds elapsed between each transaction and the first transaction in the dataset. The feature 'Amount' is the transaction Amount, this feature can be used for example-dependant cost-sensitive learning. Feature 'Class' is the response variable and it takes value 1 in case of fraud and 0 otherwise.
+
+Given the class imbalance ratio, we recommend measuring the accuracy using the Area Under the Precision-Recall Curve (AUPRC). Confusion matrix accuracy is not meaningful for unbalanced classification.
+
+```{r}
+creditcard_data <- read.csv("creditcard.csv")
+```
+
+# 2. Data Exploration
+
+# checking missing values
+```{r}
+colSums(is.na(creditcard_data))
+```
+
+```{r}
+dim(creditcard_data)
+```
+
+```{r}
+head(creditcard_data)
+```
+
+```{r}
+tail(creditcard_data)
+```
+
+```{r}
+names(creditcard_data)
+```
+
+```{r}
+str(creditcard_data)
+```
+
+# class imbalance in percentage
+
+This dataset presents transactions that occurred in two days, where we have 492 frauds out of 284,807 transactions. The dataset is highly unbalanced, the positive class (frauds) account for 0.172% of all transactions.
+
+```{r}
+table(creditcard_data$Class)
+```
+
+```{r}
+prop.table(table(creditcard_data$Class))
+```
+
+# Amount column
+```{r}
+summary(creditcard_data$Amount)
+```
+
+```{r}
+var(creditcard_data$Amount)
+```
+
+# 3. Data Manipulation
+we will scale our data using the scale() function. 
+
+We will apply this to the amount component of our creditcard_data amount. 
+
+Scaling is also known as feature standardization. 
+
+With the help of scaling, the data is structured according to a specified range. 
+
+Therefore, there are no extreme values in our dataset that might interfere with the functioning of our model.
+
+```{r}
+head(creditcard_data$Amount)
+```
+
+```{r}
+# scale the Amount column
+creditcard_data$Amount <- scale(creditcard_data$Amount)
+head(creditcard_data$Amount)
+```
+
+```{r}
+# remove column Time
+new_creditcard_data <- creditcard_data[ , -c(1)]
+head(new_creditcard_data)
+```
+
+# 4. Data Modeling
+# Correlation
+There is no correlation between variables
+
+```{r}
+# install.packages("corrplot")
+library(corrplot)
+
+correlation <- cor(new_creditcard_data)
+
+corrplot(corr = correlation, 
+         number.cex = 0.9, 
+         method = "circle", 
+         type = "upper",
+         tl.cex = 0.5,
+         tl.col = "black")
+```
+
+# Split dataset 
+
+- Train data 80 %
+
+- Test data 20 %
+
+```{r}
+library(caTools)
+
+set.seed(123)
+
+sample_data <- sample.split(new_creditcard_data$Class, SplitRatio = 0.80)
+train_data <- subset(new_creditcard_data, sample_data == TRUE)
+test_data <- subset(new_creditcard_data, sample_data == FALSE)
+```
+
+
+```{r}
+dim(train_data)
+```
+
+```{r}
+table(train_data$Class)
+```
+
+
+```{r}
+dim(test_data)
+```
+
+```{r}
+table(test_data$Class)
+```
+
+# 5. Fitting Logistic Regression Model
+# build the Logistic Regression Model
+```{r}
+Logistic_model <- glm(Class ~., 
+                      data = train_data, 
+                      family = "binomial")
+```
+
+```{r}
+summary(Logistic_model)
+```
+
+# Plot the Logistic Regression Model
+```{r}
+plot(Logistic_model)
+```
+
+```{r}
+library(ggfortify)
+
+autoplot(Logistic_model, 
+         which = 1:6, 
+         ncol = 3)
+```
+
+# ROC Curve to assess the performance of the model
+# Plot and calculate AUC on test data
+
+- we calculated and plotted an ROC curve measuring the sensitivity and specificity of the model. 
+
+- The print command plots the curve and calculates the area under the curve. 
+
+- The area of a ROC curve can be a test of the sensivity and accuracy of a model.
+
+```{r}
+library(pROC)
+
+# test the logistic regression model
+Logistic_prob <- predict(Logistic_model, 
+                         newdata = test_data,
+                         type = "response")
+
+# ROC curves
+Logistic_ROC_curve <- roc(test_data$Class, 
+                          Logistic_prob, 
+                          plot = TRUE, 
+                          col = "blue")
+```
+
+# AUC (Area Under)
+
+- AUC = 0.50 It's no different from a random guess.
+
+- AUC > 0.70 Is the benchmark for most models.
+
+- AUC > 0.80 The model works well.
+
+- AUC > 0.90 The model works very well.
+
+```{r}
+auc(Logistic_ROC_curve)
+```
+
+```{r}
+print(Logistic_ROC_curve)
+```
+
+# 6. Fitting a Decision Tree Model
+
+Decision Trees for
+
+- To plot the outcomes of a decision.
+
+- Conclude as to what class the object belongs to. 
+
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+# build the Decision Tree Model
+```{r}
+Tree_model <- rpart(Class ~., 
+                    data = train_data, 
+                    method = "class")
+```
+
+# Accurancy train data of Decision Tree Model 
+```{r}
+Tree_train_prob <- predict(Tree_model, 
+                           type = "class")
+
+# Accuracy Train
+paste("Accuracy Train:", mean(Tree_train_prob == train_data$Class))
+
+```
+
+# Accurancy test data of Decision Tree Model 
+```{r}
+Tree_test_prob <- predict(Tree_model, 
+                          newdata = test_data, 
+                          type = "class")
+# Accuracy Test
+paste("Accuracy Test:", mean(Tree_test_prob == test_data$Class))
+```
+
+```{r}
+rpart.plot(Tree_model)
+```
+
+# 7. Artificial Neural Network (ANN)
+
+- The ANN models are able to learn the patterns using the historical data and are able to perform classification on the input data.
+
+- In the case of Artificial Neural Networks, there is a range of values that is between 1 and 0. We set a limit of 0.5, that is, values above 0.5 will be 1 and the rest will be 0.
+
+```{r}
+# install.packages("neuralnet")
+library(neuralnet)
+```
+
+```{r}
+ANN_model <- neuralnet(formula = Class ~., 
+                       data = train_data, 
+                       linear.output = FALSE)
+```
+
+# Plot the ANN model
+```{r}
+plot(ANN_model)
+```
+
+# Accuracy of the ANN model
+```{r}
+ANN_predict <- compute(ANN_model, test_data)
+
+# Accuracy Test
+ANN_result <- ANN_predict$net.result
+ANN_result <- ifelse(ANN_result > 0.5, 1, 0)
+
+paste("Accuracy Test:", mean(ANN_result == test_data$Class))
+
+```
+
+# OR
+```{r}
+# Accuracy Test
+ANN_test_data <- round(test_data$Class, digits = 0)
+ANN_result_2 <- round(ANN_predict$net.result, digits = 0)
+ANN_Accuracy <- table(ANN_test_data, 
+                      ANN_result_2, 
+                      dnn = c("actual", "prediction"))
+confusionMatrix(ANN_Accuracy)
+```
+
+# 8. Gradient Boosting (GBM)
+
+1. Boosting is
+
+- เป็นการนำ classifier ที่มีความแม่นยำต่ำ (Weak Classifier) มาทำนายข้อมูล จากนั้นจะให้ classifier ที่มีความแม่นยำต่ำตัวใหม่มาแก้ไข error โดยผลรวมของ classifier จะเกิดเป็น classifier ใหม่ขึ้น และจะทำแบบนี้ไปจนแบบจำลองที่ได้ไม่มีค่าคลาดเคลื่อนเกิดขึ้น ซึ่งจะเป็นแบบจำลองที่ดีที่สุด
+
+2. GBM is
+
+- Gradient Boosting is a popular machine learning algorithm that is used to perform classification and regression tasks. 
+
+- This model comprises of several underlying ensemble models like "weak decision trees". 
+
+- These decision trees combine together to form a strong model of gradient boosting. we implemented gradient descent algorithm in the model.
+
+- Gradient Boosting เป็นเทคนิคการเรียนรู้ของเครื่องสำหรับแก้ปัญหาการถดถอย (Regression) และการจำแนกประเภท (Classification) GBM จะสร้างโครงสร้างการถดถอยตามลำดับ ซึ่ง GBM ใช้เทคนิคการเพิ่มการรวมจำนวน classifier ที่มีความแม่นยำต่ำ เพื่อสร้างเป็น classifier ใหม่โดยต้นไม้ในลำดับต่อไปจะถูกสร้างจากข้อผิดพลาดจากการคำนวณต้นไม้ก่อนหน้าโดยใช้อัลกอริทึม Level-wise ในการสร้างต้นไม้
+
+```{r}
+# install.packages("gbm")
+library(caret)
+library(gbm, quietly = TRUE)
+```
+
+# Get the time to train the GBM model
+```{r}
+system.time(
+  GBM_model <- 
+    gbm(Class ~ .,
+        distribution = "bernoulli",
+        data = rbind(train_data, test_data),
+        n.trees = 500,
+        interaction.depth = 3,
+        n.minobsinnode = 100,
+        shrinkage = 0.01,
+        bag.fraction = 0.5,
+        train.fraction = nrow(train_data) / (nrow(train_data) + nrow(test_data))
+        )
+)
+```
+
+# Determine best iteration based on test data
+```{r}
+GBM_iteration <- gbm.perf(GBM_model, method = "test")
+
+model_influence <- relative.influence(GBM_model,
+                                      n.trees = GBM_iteration,
+                                      sort. = TRUE)
+```
+
+# Plot the gbm model
+```{r}
+plot(GBM_model)
+```
+
+# Plot and calculate AUC on test data
+
+- we calculated and plotted an ROC curve measuring the sensitivity and specificity of the model. 
+
+- The print command plots the curve and calculates the area under the curve. 
+
+- The area of a ROC curve can be a test of the sensivity and accuracy of a model.
+
+```{r}
+GBM_prob_test <- predict(GBM_model, 
+                         newdata = test_data,
+                         n.trees = GBM_iteration)
+
+library(pROC)
+GBM_ROC_curve <- roc(test_data$Class,
+                     GBM_prob_test,
+                     plot = TRUE,
+                     col = "red")
+```
+
+# AUC (Area Under)
+
+- AUC = 0.50 It's no different from a random guess.
+
+- AUC > 0.70 Is the benchmark for most models.
+
+- AUC > 0.80 The model works well.
+
+- AUC > 0.90 The model works very well.
+
+```{r}
+auc(GBM_ROC_curve)
+```
+
+```{r}
+print(GBM_ROC_curve)
+```
+
+# Summary
+
+- we learnt how to develop a credit card fraud detection model using machine learning. 
+
+- we used a variety of ML algorithms to implement this model and also plotted the respective performance curves for the models.
+
+- we also learnt how data can be analyzed and visualized to discern fraudulent transactions from other types of data.
+ 
+# References
+
+"https://data-flair.training/blogs/data-science-machine-learning-project-credit-card-fraud-detection/"
+
+"https://github.com/Rpita623/Detecting-Credit-Card-Fraud"
+
+"https://www.interviewbit.com/blog/r-projects/"
+
+"https://datarockie.com/blog/top-ten-machine-learning-metrics/"
+
+"https://www.kaggle.com/code/milesh1/receiver-operating-characteristic-roc-curve-in-r/notebook"
+
+"https://medium.com/@sukmaanindita/artificial-neural-network-using-r-studio-3eb538fa39fb"
+
