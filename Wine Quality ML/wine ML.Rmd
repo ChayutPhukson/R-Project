@@ -1,0 +1,844 @@
+---
+title: "Wine Quality Machine Learning"
+author: "Chayut"
+output: 
+  html_document:
+    # number_sections: True
+    fig_caption: true
+    toc: true
+    # toc_float: true
+    fig_width: 7
+    fig_height: 4.5
+    theme: cosmo
+    highlight: tango
+    code_folding: hide
+---
+
+# 1. Import Libralies
+```{r}
+# install.packages("pacman")
+
+pacman::p_load(tidyverse, 
+               skimr, # summary dataset
+               knitr, # use function "kable"
+               GGally, # use function "ggpairs" 
+               plotly, # plot 2D, 3D 
+               viridis, 
+               caret, 
+               randomForest, 
+               e1071, 
+               rpart, 
+               xgboost, 
+               h2o, 
+               corrplot, 
+               rpart.plot, 
+               corrgram, 
+               lightgbm, 
+               visNetwork)
+```
+
+# 2. Import Dataset
+```{r}
+wine <- read_csv("winequality-red.csv")
+```
+
+# 3. Exploratory Data Analysis (EDA)
+## 3.1 Review the Dataset
+```{r}
+# library(skimr)
+# library(knitr)
+
+wine %>% 
+  skim() %>% 
+  kable()
+```
+
+## 3.2 Correlation and Corrplot the Dataset 
+```{r}
+# library(corrplot)
+
+wine %>% 
+  cor() %>% 
+  corrplot.mixed(upper = "circle", 
+                 tl.cex = 0.8,
+                 tl.col = "black",
+                 tl.pos = "lt",
+                 tl.srt = 75,
+                 number.cex = 0.7)
+```
+
+https://statsandr.com/blog/correlation-coefficient-and-correlation-test-in-r/
+```{r}
+# do not edit
+corrplot2 <- function(data,
+                      method = "pearson",
+                      sig.level = 0.05,
+                      order = "original",
+                      diag = FALSE,
+                      type = "upper",
+                      tl.cex = 0.8,
+                      tl.srt = 90,
+                      number.font = 1,
+                      number.cex = 0.7,
+                      mar = c(0, 0, 0, 0)) {
+
+library(corrplot)
+data_incomplete <- data
+data <- data[complete.cases(data), ]
+mat <- cor(data, method = method)
+cor.mtest <- function(mat, method) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], method = method)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+p.mat <- cor.mtest(data, method = method)
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(mat,
+         method = "color", 
+         col = col(200), 
+         number.font = number.font, 
+         tl.cex = tl.cex,
+         mar = mar, 
+         number.cex = number.cex,
+         type = type, 
+         order = order,
+         addCoef.col = "black", # add correlation coefficient
+         tl.col = "black", 
+         tl.srt = tl.srt, # rotation of text labels
+         # combine with significance level
+         p.mat = p.mat, 
+         sig.level = sig.level, 
+         insig = "blank",
+         # hide correlation coefficients on the diagonal
+         diag = diag)
+}
+
+# edit from here
+corrplot2(data = wine,
+          method = "pearson",
+          sig.level = 0.05,
+          order = "original",
+          diag = FALSE,
+          type = "upper",
+          tl.srt = 75,
+          tl.cex = 0.8,
+          number.cex = 0.7)
+```
+
+https://youtu.be/X12BoYpIjyw?t=387
+```{r}
+library(GGally)
+ggcorr(wine, 
+       method = c("everything", "pearson"),
+       label = TRUE,
+       label_alpha = TRUE,
+       label_size = 4,
+       size = 2.5,
+       hjust = 0.80,
+       angle = -70)
+```
+
+From the correlation test, it seems that the following variables have a higher correlation to Wine Quality.
+
+1. Alcohol
+2. Sulphates
+3. Volatile Acidity (Negative Correlation)
+4. Citric Acid
+
+```{r}
+# library(corrgram)
+
+wine %>% 
+  corrgram(lower.panel = panel.shade, 
+           upper.panel = panel.ellipse)
+```
+
+# 4. Preprocess
+## 4.1 Correct column names
+```{r}
+colnames(wine)
+```
+
+```{r}
+colnames(wine) <- wine %>% 
+                    colnames() %>% 
+                    str_replace_all(" ", "_")
+```
+
+```{r}
+colnames(wine)
+```
+
+## 4.2 Ranking of Correlation
+```{r}
+simple_cor <- function(x, y) {
+  return(cor(x, y = as.numeric(wine$quality)))
+}
+
+correlations_2 <- c(simple_cor(wine$fixed_acidity),
+                    simple_cor(wine$volatile_acidity),
+                    simple_cor(wine$citric_acid),
+                    simple_cor(wine$residual_sugar),
+                    simple_cor(wine$chlorides),
+                    simple_cor(wine$free_sulfur_dioxide),
+                    simple_cor(wine$total_sulfur_dioxide),
+                    simple_cor(wine$density),
+                    simple_cor(wine$pH),
+                    simple_cor(wine$sulphates),
+                    simple_cor(wine$alcohol))
+
+wine_2 <- wine
+wine_2$quality <- NULL
+
+names(correlations_2) <- names(wine_2)
+
+correlations_2
+```
+
+```{r}
+Ranking_cor <- data.frame(names(correlations_2), correlations_2)
+rownames(Ranking_cor) <- NULL
+
+Ranking_cor <- Ranking_cor[order(abs(Ranking_cor$correlations_2), decreasing = TRUE), ]
+
+Ranking_cor
+```
+
+```{r}
+ggplot(Ranking_cor, aes(x = reorder(names.correlations_2., correlations_2), 
+                        y = correlations_2,
+                        fill = names.correlations_2.)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "none") +
+  labs(title = "Ranking of Correlation of Red Wine Quality",
+       x = "",
+       y = "Correlation") +
+  ylim(-0.50, 0.50)
+```
+
+1. Alcohol
+2. Sulphates
+3. Volatile Acidity (Negative Correlation)
+4. Citric Acid
+
+## 4.3 Turn quality variable into factor
+```{r}
+wine$quality <- as.factor(wine$quality)
+```
+
+# 5. GGally - ggpairs
+```{r}
+wine %>%
+  mutate(quality = as.factor(quality)) %>% 
+  select(-c(residual_sugar, 
+            free_sulfur_dioxide, 
+            total_sulfur_dioxide, 
+            chlorides)) %>% 
+  ggpairs(aes(color = quality, alpha = 0.4),
+          columns = 1:7,
+          lower = list(continuous = "points"),
+          upper = list(continuous = "blank"),
+          axisLabels = "none", switch = "both")
+```
+
+## 5.1 Plotly 2D Interactive Graph
+```{r}
+# library(plotly)
+
+plot_ly(data = wine, 
+        x = ~ alcohol, 
+        y = ~ volatile_acidity, 
+        size = ~ sulphates,
+        type = "scatter",
+        mode = "markers", 
+        color = ~ quality, 
+        text = ~ quality)
+```
+
+## 5.2 Ployly 3D Interactive Graph
+```{r}
+wine %>% 
+  plot_ly(x = ~ alcohol,
+          y = ~ volatile_acidity,
+          z = ~ sulphates, 
+          color= ~ quality, 
+          hoverinfo = "text", 
+          colors = viridis(3),
+          text = ~ paste("Quality:", quality,
+                         "<br>Alcohol:", alcohol,
+                         "<br>Volatile Acidity:", volatile_acidity,
+                         "<br>sulphates:", sulphates)) %>% 
+  add_markers(opacity = 0.8) %>%
+  layout(title = "3D Wine Quality",
+         annotations = list(yref = "paper", 
+                            xref = "paper", 
+                            y = 1.05, 
+                            x=1.1, 
+                            text = "quality", 
+                            showarrow = FALSE),
+         scene = list(xaxis = list(title = "Alcohol"),
+                      yaxis = list(title = "Volatile Acidity"),
+                      zaxis = list(title = "sulphates")))
+```
+
+# 6. Decision Tree
+## 6.1 splite dataset
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+## 6.2 Decision Tree Model
+```{r}
+set.seed(1)
+
+Tree_model <- rpart(quality ~ alcohol + 
+                              sulphates +
+                              volatile_acidity + 
+                              citric_acid,
+                    data = train_wine,
+                    method = "class")
+```
+
+## 6.3 plot Decision Tree
+```{r}
+rpart.plot(Tree_model)
+```
+
+```{r}
+# install.packages("sparkline")
+# library(sparkline)
+
+visTree(Tree_model)
+```
+
+## 6.4 Accuracy Train & Confusion Matrix
+```{r}
+probabilities_Tree_train <- predict(Tree_model,
+                                    type = "class")
+
+paste("Accuracy Train:", 
+      round(mean(probabilities_Tree_train == train_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_Tree_train, 
+                reference = train_wine$quality, 
+                dnn = c("Prediction", "Actual"))
+```
+
+## 6.5 Accuracy Test & Confusion Matrix
+```{r}
+test_wine[, !colnames(test_wine) %in% c("quality")]
+```
+
+```{r}
+probabilities_Tree_test <- predict(Tree_model, 
+                                   newdata = test_wine[ , !colnames(test_wine) %in% c("quality")], # test_wine
+                                   type = "class")
+
+paste("Accuracy Test:", 
+      round(mean(probabilities_Tree_test == test_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_Tree_test, 
+                reference = test_wine$quality, 
+                dnn = c("Prediction", "Actual"))
+```
+
+# 7. Random Forest
+## 7.1 splite dataset
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+```{r}
+# set.seed(1)
+# n <- nrow(wine)
+# train_id <- sample(1:n, size = 0.9*n)
+# train_wine <- wine[train_id, ]
+# test_wine <- wine[-train_id, ]
+```
+
+## 7.2 Random Forest Model
+```{r}
+set.seed(1)
+
+RF_model <- randomForest(quality ~ alcohol +
+                                   volatile_acidity +
+                                   citric_acid +
+                                   density +
+                                   pH +
+                                   sulphates,
+                         data = train_wine)
+
+RF_model
+```
+
+## 7.3 Ranking Variable Importance
+```{r}
+importance(RF_model)
+```
+
+```{r}
+varImp(RF_model) %>% kable()
+```
+
+```{r}
+varImpPlot(RF_model)
+```
+
+```{r}
+row.names(importance(RF_model))
+```
+
+```{r}
+importance <- importance(RF_model)
+importance[ ,'MeanDecreaseGini']
+```
+
+```{r}
+# Get importance
+importance <- importance(RF_model)
+varImportance <- data.frame(Variables = row.names(importance), 
+                            Importance = round(importance[ ,'MeanDecreaseGini'], 2))
+
+varImportance
+```
+```{r}
+# Create a rank variable based on importance
+rankImportance <- varImportance %>% 
+                    mutate(Rank = paste0('#', dense_rank(desc(Importance))))
+rankImportance
+```
+```{r}
+# Use ggplot2 to visualize the relative importance of variables
+ggplot(data = rankImportance, aes(x = reorder(Variables, Importance), 
+                                  y = Importance, 
+                                  fill = Importance)) +
+  scale_fill_gradient(low = '#9AEBA3', high = '#012030') +
+  geom_bar(stat='identity') + 
+  geom_text(aes(x = Variables, 
+                y = 0.5, 
+                label = Rank),
+            hjust = 0, 
+            vjust = 0.55, 
+            size = 4, 
+            colour = 'red') +
+  labs(x = 'Variables') +
+  coord_flip() + 
+  theme_classic() 
+```
+
+```{r}
+varImpPlot(RF_model)
+```
+
+```{r}
+ggplot(Ranking_cor, aes(x = reorder(names.correlations_2., correlations_2), 
+                        y = correlations_2,
+                        fill = names.correlations_2.)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "none") +
+  labs(title = "Ranking of Correlation of Red Wine Quality",
+       x = "",
+       y = "Correlation") +
+  ylim(-0.50, 0.50)
+```
+
+## 7.4 Accuracy Train & Confusion Matrix
+```{r}
+probabilities_Forest_train <- predict(RF_model)
+
+paste("Accuracy Train:", 
+      round(mean(probabilities_Forest_train == train_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_Forest_train, 
+                reference = train_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+## 7.5 Accuracy Test & Confusion Matrix
+```{r}
+probabilities_Forest_test <- predict(RF_model,
+                                     newdata = test_wine[ , !colnames(test_wine) %in% c("quality")])
+
+paste("Accuracy Test:", 
+      round(mean(probabilities_Forest_test == test_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_Forest_test, 
+                reference = test_wine$quality, 
+                dnn = c("Prediction", "Actual"))
+```
+
+# 8. Xgboost with Histogram
+## 8.1 splite dataset
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+```{r}
+colnames(test_wine)
+```
+
+```{r}
+train_wine[, !colnames(test_wine) %in% c("quality")]
+```
+
+```{r}
+# xgboost
+
+xgb_train <- xgb.DMatrix(data = data.matrix(train_wine[, !colnames(test_wine) %in% c("quality")]), 
+                         label = train_wine$quality)
+
+xgb_train
+```
+
+```{r}
+xgb_test <- xgb.DMatrix(data = data.matrix(test_wine[, !colnames(test_wine) %in% c("quality")]))
+
+xgb_test
+```
+
+## 8.2 Xgboost Model
+```{r}
+parameters <- list(
+  
+# General Parameters
+  booster            = "gbtree",      
+  silent             = 0,   
+  
+# Booster Parameters
+  eta                = 0.08,              
+  gamma              = 0.7,                 
+  max_depth          = 8,                
+  min_child_weight   = 2,            
+  subsample          = 0.9,                 
+  colsample_bytree   = 0.5,                
+  colsample_bylevel  = 1,          
+  lambda             = 1,    
+  alpha              = 0,       
+
+# Task Parameters
+  objective          = "multi:softmax", # default = "reg:linear"
+  eval_metric        = "merror",
+  num_class          = 7,
+  seed               = 1, # reproducability seed
+  tree_method        = "hist",
+  grow_policy        = "lossguide"
+)
+
+xgb_model <- xgb.train(parameters, xgb_train, nrounds = 100)
+```
+
+## 8.3 Ranking Variable Importance
+```{r}
+# xgb.importance(colnames(train_wine[, !colnames(test_wine) %in% c("quality")]), 
+#                model = xgb_model) %>% kable()
+
+xgb.importance(colnames(train_wine$quality), model = xgb_model) %>% kable()
+```
+
+```{r}
+xgb.importance(model = xgb_model)
+```
+
+```{r}
+xgb_imp <- xgb.importance(model = xgb_model)
+
+xgb.plot.importance(importance_matrix = xgb_imp)
+```
+
+## 8.4 Accuracy Test & Confusion Matrix
+```{r}
+probabilities_xgb_test <- predict(xgb_model,
+                                  newdata = xgb_test)
+
+probabilities_xgb_test
+```
+
+```{r}
+test_wine$quality
+```
+
+```{r}
+as.factor(probabilities_xgb_test + 2)
+```
+
+```{r}
+confusionMatrix(data = as.factor(probabilities_xgb_test + 2), 
+                reference = test_wine$quality, 
+                dnn = c("Prediction", "Actual"))
+```
+
+# 9. lightGBM (Light Gradient Boosting Machine (LGBM))
+## 9.1 splite dataset`
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+```{r}
+lgbm_train <- lgb.Dataset(data = data.matrix(train_wine[ , !colnames(test_wine) %in% c("quality")]), 
+                          label = train_wine$quality %>% as.numeric() - 1)
+```
+
+## 9.2 lightGBM Model
+```{r}
+params <- list(objective = "multiclass", 
+               metric = "multi_error", 
+               num_class = 6)
+
+# set.seed(1)
+lgbm_model <- lgb.train(params = params,
+                        data = lgbm_train,
+                        100,
+                        min_data = 1, 
+                        learning_rate = 0.06)
+```
+
+## 9.3 Accuracy Test & Confusion Matrix
+```{r}
+result <- predict(lgbm_model,
+                  data.matrix(test_wine[ , colnames(test_wine) != c('quality')]))
+
+list <- list()
+
+for (i in 1:nrow(test_wine)) {
+  
+    max = max(result[(i - 1) * 6 + 1], 
+              result[(i - 1) * 6 + 2], 
+              result[(i - 1) * 6 + 3], 
+              result[(i - 1) * 6 + 4], 
+              result[(i - 1) * 6 + 5], 
+              result[(i - 1) * 6 + 6])
+
+    list[i] <- if_else(max == result[(i - 1) * 6 + 6], 6, 
+               if_else(max == result[(i - 1) * 6 + 5], 5,
+               if_else(max == result[(i - 1) * 6 + 4], 4,
+               if_else(max == result[(i - 1) * 6 + 3], 3,
+               if_else(max == result[(i - 1) * 6 + 2], 2, 1)))))
+}
+
+lgbm_pred <- list %>% as.numeric() - 1
+
+lgbm_pred
+```
+
+```{r}
+test_wine$quality
+```
+
+```{r}
+as.factor(lgbm_pred + 3)
+```
+
+```{r}
+confusionMatrix(data = as.factor(lgbm_pred + 3), 
+                reference = test_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+## 9.4 Ranking Variable Importance
+```{r}
+lgb.importance(lgbm_model, percentage = TRUE) %>% kable()
+```
+
+```{r}
+lgbm_imp <- lgb.importance(lgbm_model, percentage = TRUE)
+  
+lgb.plot.importance(tree_imp = lgbm_imp, measure = "Gain")
+```
+
+# 10. SVM (Support Vector Machine)
+## 10.1 splite dataset
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+## 10.2 SVM Model
+```{r}
+svm_model <- svm(quality ~ alcohol +
+                           volatile_acidity +
+                           citric_acid +
+                           density +
+                           pH +
+                           sulphates,
+                 data = train_wine)
+```
+
+## 10.3 Accuracy Train & Confusion Matrix
+```{r}
+probabilities_svm_train <- predict(svm_model)
+
+paste("Accuracy Train:", 
+      round(mean(probabilities_svm_train == train_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_svm_train, 
+                reference = train_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+## 10.4 Accuracy Test & Confusion Matrix
+```{r}
+probabilities_svm_test <- predict(svm_model,
+                                   newdata = test_wine[ , !colnames(test_wine) %in% c("quality")])
+
+paste("Accuracy Test:", 
+      round(mean(probabilities_svm_test == test_wine$quality) * 100, 
+            digits = 2), 
+      "%")
+```
+
+```{r}
+confusionMatrix(data = probabilities_svm_test, 
+                reference = test_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+# 11. h2o (Deep Learning)
+## 11.1 splite dataset
+```{r}
+# library(caret)
+
+set.seed(1)
+
+train_id <- createDataPartition(y = wine$quality, p = 0.9, list = FALSE)
+train_wine <- wine[train_id, ]
+test_wine <- wine[-train_id, ]
+```
+
+```{r}
+# h2o
+
+h2o.init()
+h2o_train <- as.h2o(train_wine)
+h2o_test <- as.h2o(test_wine)
+```
+
+## 11.2 h2o Model
+```{r}
+h2o_model <- h2o.deeplearning(x = setdiff(names(train_wine), c("quality")),
+                              
+                              y = "quality",
+                              
+                              training_frame = h2o_train,
+                              
+                              # activation = "RectifierWithDropout", # algorithm
+
+                              # input_dropout_ratio = 0.2, # % of inputs dropout
+
+                              # balance_classes = T,
+
+                              # momentum_stable = 0.99,
+
+                              # nesterov_accelerated_gradient = T, # use it for speed
+
+                              epochs = 1000,
+                              
+                              standardize = TRUE,         # standardize data
+
+                              hidden = c(100, 100),       # 2 layers of 00 nodes each
+
+                              rate = 0.05,                # learning rate
+
+                              seed = 1                    # reproducability seed
+
+  )
+```
+
+## 11.3 Accuracy Test & Confusion Matrix
+```{r}
+h2o_predictions <- h2o.predict(object = h2o_model, 
+                               newdata = h2o_test) %>% as.data.frame()
+```
+
+```{r}
+confusionMatrix(data = h2o_predictions$predict, 
+                reference = test_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+# 12. Conclusion
+## 12.1 xgboost Model
+```{r}
+confusionMatrix(data = as.factor(probabilities_xgb_test + 2), 
+                reference = test_wine$quality, 
+                dnn = c("Prediction", "Actual"))
+```
+
+## 12.2 lightGBM
+```{r}
+confusionMatrix(data = as.factor(lgbm_pred + 3), 
+                reference = test_wine$quality,
+                dnn = c("Prediction", "Actual"))
+```
+
+xgboost and lightGBM give the best outcome among all the models.
+
+
+# 13. Reference
+1. https://www.kaggle.com/code/couyang/wine-eda-dt-rf-xgb-lightgbm-svm-and-h2o/report#h2o-deeplearning
+2. https://www.kaggle.com/code/grosvenpaul/beginners-guide-to-eda-and-random-forest-using-r
+
+
